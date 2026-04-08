@@ -1,0 +1,10 @@
+{
+  "lastUpdate": 1775661253,
+  "coins": [
+    { "id": "bitcoin", "symbol": "BTC", "name": "Bitcoin", "price": 71004.61000000, "change": 4.600, "color": "#f7931a", "emoji": "₿" },
+    { "id": "ethereum", "symbol": "ETH", "name": "Ethereum", "price": 2202.07000000, "change": 6.360, "color": "#627eea", "emoji": "Ξ" },
+    { "id": "solana", "symbol": "SOL", "name": "Solana", "price": 82.96000000, "change": 5.561, "color": "#00ffa3", "emoji": "◎" },
+    { "id": "binancecoin", "symbol": "BNB", "name": "BNB", "price": 602.84000000, "change": 1.302, "color": "#f3ba2f", "emoji": "🔶" },
+    { "id": "ripple", "symbol": "XRP", "name": "XRP", "price": 1.35110000, "change": 4.147, "color": "#00aae4", "emoji": "✕" }
+  ]
+}
