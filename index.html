@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>🚀 Crypto Live</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        :root {
+            --bg: #0d1117;
+            --card: #161b22;
+            --border: #30363d;
+            --text: #e6edf3;
+            --text-dim: #8b949e;
+            --green: #3fb950;
+            --red: #f85149;
+            --btc: #f7931a;
+            --eth: #627eea;
+            --sol: #00ffa3;
+            --bnb: #f3ba2f;
+            --xrp: #23292f;
+        }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            padding: 16px;
+            padding-bottom: 100px;
+        }
+        .header {
+            text-align: center;
+            padding: 20px 0 30px;
+        }
+        .header h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+        .header p { color: var(--text-dim); font-size: 13px; }
+        
+        .coin-grid {
+            display: grid;
+            gap: 16px;
+        }
+        .coin-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 20px;
+            transition: transform 0.2s;
+        }
+        .coin-card:active { transform: scale(0.98); }
+        
+        .coin-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .coin-info { display: flex; align-items: center; gap: 12px; }
+        .coin-icon { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+        .coin-name { font-size: 18px; font-weight: 600; }
+        .coin-symbol { color: var(--text-dim); font-size: 13px; text-transform: uppercase; }
+        .coin-price-block { text-align: right; }
+        .coin-price { font-size: 22px; font-weight: 700; }
+        .coin-change { font-size: 14px; font-weight: 600; }
+        .coin-change.up { color: var(--green); }
+        .coin-change.down { color: var(--red); }
+        
+        .sparkline-container { height: 80px; margin-top: 12px; }
+        
+        .refresh-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--card);
+            border-top: 1px solid var(--border);
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .refresh-timer { color: var(--text-dim); font-size: 13px; }
+        .last-update { color: var(--text-dim); font-size: 12px; }
+        .btn-refresh {
+            background: var(--btc);
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn-refresh:active { opacity: 0.8; }
+        
+        .loader {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--text-dim);
+            border-top-color: var(--btc);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        .error-msg {
+            background: rgba(248, 81, 73, 0.1);
+            border: 1px solid var(--red);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            color: var(--red);
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 Crypto Live</h1>
+        <p id="last-update" class="last-update">Lädt...</p>
+    </div>
+    
+    <div id="error-container"></div>
+    
+    <div class="coin-grid" id="coins-container">
+        <div class="coin-card" style="text-align:center;padding:40px">
+            <span class="loader"></span> Lade Daten...
+        </div>
+    </div>
+    
+    <div class="refresh-bar">
+        <span class="refresh-timer" id="countdown">Update in 30s</span>
+        <button class="btn-refresh" onclick="refreshData()">🔄 Aktualisieren</button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        const tg = window.Telegram?.WebApp;
+        if (tg) { tg.expand(); tg.ready(); }
+        
+        const COINS = [
+            { id: 'bitcoin', symbol: 'BTC', name: 'Bitcoin', color: '#f7931a', emoji: '₿' },
+            { id: 'ethereum', symbol: 'ETH', name: 'Ethereum', color: '#627eea', emoji: 'Ξ' },
+            { id: 'solana', symbol: 'SOL', name: 'Solana', color: '#00ffa3', emoji: '◎' },
+            { id: 'binancecoin', symbol: 'BNB', name: 'BNB', color: '#f3ba2f', emoji: '🔶' },
+            { id: 'ripple', symbol: 'XRP', name: 'XRP', color: '#00aae4', emoji: '✕' }
+        ];
+        
+        const REFRESH_INTERVAL = 30;
+        let countdown = REFRESH_INTERVAL;
+        let charts = {};
+        let countdownTimer;
+        
+        async function fetchPrices() {
+            const ids = COINS.map(c => c.id).join(',');
+            const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true`;
+            
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('API Error');
+            return response.json();
+        }
+        
+        async function fetchSparkline(coinId) {
+            const url = `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=1&interval=hourly`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Sparkline Error');
+            const data = await response.json();
+            return data.prices.map(p => p[1]);
+        }
+        
+        async function refreshData() {
+            countdown = REFRESH_INTERVAL;
+            document.getElementById('coins-container').innerHTML = `
+                <div class="coin-card" style="text-align:center;padding:40px">
+                    <span class="loader"></span> Lade Daten...
+                </div>
+            `;
+            document.getElementById('error-container').innerHTML = '';
+            
+            try {
+                const prices = await fetchPrices();
+                const container = document.getElementById('coins-container');
+                container.innerHTML = '';
+                
+                for (const coin of COINS) {
+                    const data = prices[coin.id];
+                    if (!data) continue;
+                    
+                    const price = data.usd;
+                    const change = data.usd_24h_change || 0;
+                    const changeClass = change >= 0 ? 'up' : 'down';
+                    const changeSign = change >= 0 ? '+' : '';
+                    
+                    const sparkline = await fetchSparkline(coin.id);
+                    
+                    const card = document.createElement('div');
+                    card.className = 'coin-card';
+                    card.innerHTML = `
+                        <div class="coin-header">
+                            <div class="coin-info">
+                                <div class="coin-icon" style="background:${coin.color}20;border:2px solid ${coin.color}">${coin.emoji}</div>
+                                <div>
+                                    <div class="coin-name">${coin.name}</div>
+                                    <div class="coin-symbol">${coin.symbol}</div>
+                                </div>
+                            </div>
+                            <div class="coin-price-block">
+                                <div class="coin-price">$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                <div class="coin-change ${changeClass}">${changeSign}${change.toFixed(2)}%</div>
+                            </div>
+                        </div>
+                        <div class="sparkline-container">
+                            <canvas id="chart-${coin.id}"></canvas>
+                        </div>
+                    `;
+                    container.appendChild(card);
+                    
+                    setTimeout(() => renderSparkline(coin.id, sparkline, coin.color, change >= 0), 100);
+                }
+                
+                const now = new Date();
+                document.getElementById('last-update').textContent = `Zuletzt: ${now.toLocaleTimeString('de-DE')}`;
+                
+            } catch (e) {
+                document.getElementById('error-container').innerHTML = `
+                    <div class="error-msg">
+                        ⚠️ Fehler beim Laden: ${e.message}<br>
+                        <small>Versuche es in einigen Sekunden erneut</small>
+                    </div>
+                `;
+                document.getElementById('coins-container').innerHTML = `
+                    <div class="coin-card" style="text-align:center;padding:40px;color:var(--text-dim)">
+                        Keine Daten verfügbar
+                    </div>
+                `;
+            }
+        }
+        
+        function renderSparkline(coinId, data, color, isUp) {
+            const ctx = document.getElementById(`chart-${coinId}`);
+            if (!ctx) return;
+            
+            const lineColor = isUp ? '#3fb950' : '#f85149';
+            const fillColor = isUp ? 'rgba(63,185,80,0.1)' : 'rgba(248,81,73,0.1)';
+            
+            if (charts[coinId]) charts[coinId].destroy();
+            
+            charts[coinId] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.map((_, i) => i),
+                    datasets: [{
+                        data: data,
+                        borderColor: lineColor,
+                        backgroundColor: fillColor,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 0,
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { display: false },
+                        y: { display: false }
+                    },
+                    interaction: { enabled: false }
+                }
+            });
+        }
+        
+        function startCountdown() {
+            clearInterval(countdownTimer);
+            countdownTimer = setInterval(() => {
+                countdown--;
+                document.getElementById('countdown').textContent = `Update in ${countdown}s`;
+                if (countdown <= 0) refreshData();
+            }, 1000);
+        }
+        
+        // Init
+        refreshData();
+        startCountdown();
+    </script>
+</body>
+</html>
